@@ -1,5 +1,9 @@
 import { Router } from "express";
-import { registerUser, loginUser } from "../controllers/authController.js";
+import {
+  registerUser,
+  loginUser,
+  logoutUser,
+} from "../controllers/authController.js";
 const authRouter = Router();
 
 /**
@@ -17,5 +21,13 @@ authRouter.post("/register", registerUser);
  */
 
 authRouter.post("/login", loginUser);
+
+/**
+ * @route POST /api/auth/logout
+ * @desc Logout a user
+ * @access Public
+ */
+
+authRouter.post("/logout", logoutUser);
 
 export default authRouter;

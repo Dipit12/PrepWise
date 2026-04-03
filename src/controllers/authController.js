@@ -1,4 +1,5 @@
 import User from "../models/userModel.js";
+import Blacklist from "../models/blacklistModel.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
@@ -93,6 +94,26 @@ export const loginUser = async (req, res) => {
         email: user.email,
       },
       token,
+    });
+  } catch (err) {
+    res.status(500).json({
+      msg: "Server error: " + err,
+    });
+  }
+};
+
+export const logoutUser = async (req, res) => {
+  const token = req.cookies.token;
+  try {
+    if (!token) {
+      return res.status(400).json({
+        msg: "No token provided",
+      });
+    }
+    await Blacklist.create({ token });
+    res.clearCookie("token");
+    res.status(200).json({
+      msg: "User logged out successfully",
     });
   } catch (err) {
     res.status(500).json({
