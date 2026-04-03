@@ -121,3 +121,26 @@ export const logoutUser = async (req, res) => {
     });
   }
 };
+
+export const getMe = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        msg: "User not found",
+      });
+    }
+    res.status(200).json({
+      msg: "User retrieved successfully",
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({
+      msg: "Server error: " + err,
+    });
+  }
+};

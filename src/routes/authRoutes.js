@@ -3,7 +3,10 @@ import {
   registerUser,
   loginUser,
   logoutUser,
+  getMe,
 } from "../controllers/authController.js";
+import authMiddleware from "../middleware/authMiddleware.js";
+
 const authRouter = Router();
 
 /**
@@ -30,4 +33,11 @@ authRouter.post("/login", loginUser);
 
 authRouter.post("/logout", logoutUser);
 
+/**
+ * @route GET /api/auth/getMe
+ * @description get the current user
+ * @access Private
+ */
+
+authRouter.get("/getMe", authMiddleware, getMe);
 export default authRouter;
