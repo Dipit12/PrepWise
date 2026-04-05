@@ -1,9 +1,23 @@
 import "../authForm.scss";
-
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../hooks/useAuth";
 const Register = () => {
-  const handleSubmit = (e) => {
+  const { loading, handleRegister } = useAuth();
+
+  const navigate = useNavigate();
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [username, setUsername] = useState("");
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    await handleRegister();
+    navigate("/");
   };
+
+  if (loading) return <p>Loading...</p>;
   return (
     <>
       <main>
@@ -13,6 +27,8 @@ const Register = () => {
             <div className="input-group">
               <label htmlFor="username">Username</label>
               <input
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
                 type="text"
                 name="username"
                 id="username"
@@ -22,6 +38,8 @@ const Register = () => {
             <div className="input-group">
               <label htmlFor="email">Email</label>
               <input
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 type="email"
                 name="email"
                 id="email"
@@ -31,6 +49,8 @@ const Register = () => {
             <div className="input-group">
               <label htmlFor="password">Password</label>
               <input
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 type="password"
                 name="password"
                 id="password"

@@ -40,4 +40,6 @@ authRouter.post("/logout", logoutUser);
  */
 
 authRouter.get("/getMe", authMiddleware, getMe);
+
+
 export default authRouter;
