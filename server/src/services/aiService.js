@@ -122,7 +122,7 @@ const interviewReportResponseSchema = {
   },
 };
 
-async function generateInterviewReport({
+export async function generateInterviewReport({
   jobDescription,
   candidateResume,
   selfDescription,
@@ -141,7 +141,7 @@ Use exactly:
 `;
 
   const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
+    model: "gemini-3-flash-preview",
     contents: `
 ${prompt}
 
@@ -175,16 +175,3 @@ ${selfDescription}
 
   return validated.data;
 }
-
-generateInterviewReport({
-  jobDescription,
-  candidateResume: resume,
-  selfDescription,
-})
-  .then((data) => {
-    console.log("Interview report generated successfully:\n");
-    console.dir(data, { depth: null });
-  })
-  .catch((err) => {
-    console.error("Failed to generate interview report:", err.message);
-  });
