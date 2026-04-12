@@ -42,8 +42,8 @@ export const registerUser = async (req, res) => {
 
     res.cookie("token", token, {
       httpOnly: true,
-      sameSite: "lax",
-      secure: false,
+      sameSite: "none",
+      secure: true,
       maxAge: 24 * 60 * 60 * 1000,
     });
     res.status(201).json({
@@ -92,8 +92,8 @@ export const loginUser = async (req, res) => {
     );
     res.cookie("token", token, {
       httpOnly: true,
-      sameSite: "lax",
-      secure: false,
+      sameSite: "none",
+      secure: true,
       maxAge: 24 * 60 * 60 * 1000,
     });
     res.status(200).json({
@@ -123,8 +123,8 @@ export const logoutUser = async (req, res) => {
     await Blacklist.create({ token });
     res.clearCookie("token", {
       httpOnly: true,
-      sameSite: "lax",
-      secure: false,
+      sameSite: "none",
+      secure: true,
     });
     res.status(200).json({
       msg: "User logged out successfully",
