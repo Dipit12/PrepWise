@@ -2,7 +2,6 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { z } from "zod";
 import dotenv from "dotenv";
 import PDFDocument from "pdfkit";
-import { Readable } from "stream";
 
 dotenv.config();
 
@@ -180,52 +179,36 @@ function parseJsonFromModelText(rawText) {
   }
 }
 
-function stripHtmlTags(html) {
-  return html
-    .replace(/<[^>]*>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&")
-    .replace(/\s+/g, " ")
-    .trim();
-}
+function parseHtmlToPdfElements(html) {
+  const elements = [];
+  let currentPos = 0;
 
-// Convert HTML to plain text (simple version)
-function htmlToPlainText(html) {
-  let text = html;
+  // Remove style tags and their content
+  let cleanHtml = html.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
 
-  // Replace header tags with newlines
-  text = text.replace(/<h[1-6][^>]*>/gi, "\n\n");
-  text = text.replace(/<\/h[1-6]>/gi, "\n");
+  // Parse elements
+  const tagRegex = /<([a-z][a-z0-9]*)\b[^>]*>([^<]*)<\/\1>|<([a-z][a-z0-9]*)\b[^>]*>([^<]*)/gi;
+  let match;
 
-  // Replace paragraph tags with newlines
-  text = text.replace(/<p[^>]*>/gi, "\n");
-  text = text.replace(/<\/p>/gi, "\n");
+  while ((match = tagRegex.exec(cleanHtml)) !== null) {
+    const tagName = (match[1] || match[3]).toLowerCase();
+    const content = (match[2] || match[4]).trim();
 
-  // Replace line breaks
-  text = text.replace(/<br\s*\/?>/gi, "\n");
+    if (!content) continue;
 
-  // Replace list items
-  text = text.replace(/<li[^>]*>/gi, "• ");
-  text = text.replace(/<\/li>/gi, "\n");
+    // Decode HTML entities
+    const text = content
+      .replace(/&nbsp;/g, " ")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'");
 
-  // Remove all other HTML tags
-  text = text.replace(/<[^>]*>/g, "");
+    elements.push({ tag: tagName, text });
+  }
 
-  // Decode HTML entities
-  text = text.replace(/&nbsp;/g, " ");
-  text = text.replace(/&lt;/g, "<");
-  text = text.replace(/&gt;/g, ">");
-  text = text.replace(/&amp;/g, "&");
-  text = text.replace(/&quot;/g, '"');
-  text = text.replace(/&#39;/g, "'");
-
-  // Clean up multiple spaces and newlines
-  text = text.replace(/\n\n+/g, "\n\n");
-  text = text.replace(/[ \t]+/g, " ");
-
-  return text.trim();
+  return elements;
 }
 
 async function generatePdfFromHtml(htmlContent) {
@@ -235,7 +218,7 @@ async function generatePdfFromHtml(htmlContent) {
     return new Promise((resolve, reject) => {
       const doc = new PDFDocument({
         bufferPages: true,
-        margin: 50,
+        margin: 40,
         size: "A4",
       });
 
@@ -257,26 +240,64 @@ async function generatePdfFromHtml(htmlContent) {
       });
 
       try {
-        // Convert HTML to plain text
-        const plainText = htmlToPlainText(htmlContent);
+        // Parse HTML
+        const elements = parseHtmlToPdfElements(htmlContent);
 
-        // Set font and add content
-        doc.fontSize(11).font("Helvetica");
+        doc.font("Helvetica");
 
-        const lines = plainText.split("\n");
-        let lineHeight = 0;
-
-        for (const line of lines) {
-          if (doc.y > doc.page.height - 50) {
+        for (const element of elements) {
+          // Check page height and add new page if needed
+          if (doc.y > doc.page.height - 60) {
             doc.addPage();
           }
 
-          if (line.trim() === "") {
-            doc.moveDown(0.5);
-          } else if (line.startsWith("•")) {
-            doc.fontSize(10).text(line, { align: "left" });
-          } else {
-            doc.fontSize(11).text(line, { align: "left" });
+          const { tag, text } = element;
+
+          switch (tag.toLowerCase()) {
+            case "h1":
+              doc.fontSize(18).font("Helvetica-Bold").text(text, { align: "center" });
+              doc.moveDown(0.3);
+              doc.font("Helvetica");
+              break;
+
+            case "h2":
+              doc.fontSize(14).font("Helvetica-Bold").text(text);
+              doc.moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.width - doc.page.margins.right, doc.y).stroke();
+              doc.moveDown(0.3);
+              doc.font("Helvetica");
+              break;
+
+            case "h3":
+              doc.fontSize(11).font("Helvetica-Bold").text(text);
+              doc.moveDown(0.2);
+              doc.font("Helvetica");
+              break;
+
+            case "p":
+              doc.fontSize(10).text(text, { align: "justify" });
+              doc.moveDown(0.2);
+              break;
+
+            case "li":
+              doc.fontSize(10).text("• " + text, { align: "left" });
+              doc.moveDown(0.15);
+              break;
+
+            case "strong":
+            case "b":
+              doc.fontSize(10).font("Helvetica-Bold").text(text);
+              doc.font("Helvetica");
+              break;
+
+            case "em":
+            case "i":
+              doc.fontSize(10).font("Helvetica-Oblique").text(text);
+              doc.font("Helvetica");
+              break;
+
+            default:
+              doc.fontSize(10).text(text);
+              doc.moveDown(0.1);
           }
         }
 
@@ -366,10 +387,12 @@ Generate a polished, modern, ATS-friendly one-page resume in valid HTML.
 Return ONLY JSON with exactly one key: "html".
 
 Requirements:
-- Valid semantic HTML
-- Professional typography and spacing
-- Include sections: Summary, Skills, Experience, Projects, Education
-- Tailor wording to the provided Job Description
+- Valid semantic HTML with proper structure
+- Use h1 for name, h2 for sections, h3 for subsections
+- Use <p> tags for paragraphs
+- Use <ul><li> for bullet points
+- Use <strong> for important text
+- Professional content, no CSS styling needed
 - Keep concise and impactful bullet points
 - Must be one page only
 
