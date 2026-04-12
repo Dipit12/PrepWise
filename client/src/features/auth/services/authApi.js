@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const api = axios.create({
-  baseURL: "https://prepwise-1-yc3u.onrender.com",
+  baseURL: "https://prepwise-2.onrender.com",
   withCredentials: true,
 });
 
