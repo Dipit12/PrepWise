@@ -16,6 +16,11 @@ const features = [
     desc: "Follow a practical plan with daily goals to improve confidence before interviews.",
     icon: "🗺️",
   },
+  {
+    title: "Updated Resume PDF Generator",
+    desc: "Generate an improved, role-tailored resume and download it as a professional PDF instantly.",
+    icon: "🧾",
+  },
 ];
 
 const stats = [
@@ -247,7 +252,7 @@ export default function Landing() {
 
         .steps-grid {
           margin-top: 0.6rem;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
+          grid-template-columns: repeat(4, minmax(0, 1fr));
         }
 
         .step-card {
@@ -347,6 +352,7 @@ export default function Landing() {
               <li>Skill-gap tagging by severity (high / medium / low)</li>
               <li>Structured 7-day preparation roadmap</li>
               <li>Saved report history for every interaction</li>
+              <li>One-click updated resume PDF tailored to the target job</li>
             </ul>
           </aside>
         </section>
@@ -398,6 +404,14 @@ export default function Landing() {
             </p>
           </article>
         </section>
+        <article className="step-card">
+          <span className="step-number">Step 4</span>
+          <h4>Download improved resume</h4>
+          <p>
+            Use your generated report to create a polished, updated resume PDF
+            tailored to the same role.
+          </p>
+        </article>
 
         <section className="cta">
           <h3>Ready to interview with confidence?</h3>
