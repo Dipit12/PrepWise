@@ -2,7 +2,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { z } from "zod";
 import dotenv from "dotenv";
 import puppeteer from "puppeteer";
-import { execSync } from "child_process";
+import chromium from "@sparticuz/chromium";
 
 dotenv.config();
 
@@ -12,37 +12,6 @@ if (!apiKey) {
 }
 
 const ai = new GoogleGenAI({ apiKey });
-
-// Helper to find Chrome executable
-function getChromeExecutable() {
-  try {
-    // Try to find Chrome in cache directory (Render)
-    const cacheDir = "/opt/render/.cache/puppeteer";
-    const result = execSync(`find ${cacheDir} -name "chrome" -o -name "chromium" 2>/dev/null || true`, { encoding: 'utf8' }).trim();
-    if (result) return result.split('\n')[0];
-  } catch (e) {
-    // Ignore errors
-  }
-
-  // Fallback to common Chrome locations
-  const commonPaths = [
-    "/usr/bin/google-chrome",
-    "/usr/bin/chromium",
-    "/usr/bin/chromium-browser",
-    "/snap/bin/chromium",
-  ];
-
-  for (const path of commonPaths) {
-    try {
-      execSync(`test -f ${path}`, { stdio: 'ignore' });
-      return path;
-    } catch (e) {
-      // Continue to next path
-    }
-  }
-
-  return null;
-}
 
 const interviewReportSchema = z.object({
   matchScore: z.number().min(0).max(100),
@@ -248,25 +217,23 @@ ${trimmed}
 
 async function generatePdfFromHtml(htmlContent) {
   try {
-    console.log("Starting Puppeteer browser launch...");
-    const chromeExecutable = getChromeExecutable();
-    console.log("Chrome executable found at:", chromeExecutable);
+    console.log(
+      "Starting Puppeteer browser launch with @sparticuz/chromium...",
+    );
 
-    const launchOptions = {
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
-    };
+    const launchArgs = await chromium.args;
+    const executablePath = await chromium.executablePath;
 
-    if (chromeExecutable) {
-      launchOptions.executablePath = chromeExecutable;
-    }
-
-    const browser = await puppeteer.launch(launchOptions);
+    const browser = await puppeteer.launch({
+      args: launchArgs,
+      executablePath,
+      headless: chromium.headless,
+    });
 
     try {
       console.log("Browser launched, creating new page...");
       const page = await browser.newPage();
-      
+
       console.log("Setting page content...");
       await page.setContent(htmlContent, { waitUntil: "networkidle0" });
 
@@ -356,7 +323,7 @@ export async function generateResumePDF({
 }) {
   try {
     console.log("Starting resume PDF generation...");
-    
+
     const prompt = `
 You are a senior resume writer and ATS optimization expert.
 
@@ -410,7 +377,7 @@ ${jobDescription}
 
     console.log("Ensuring full HTML document...");
     const htmlDocument = ensureFullHtmlDocument(validated.data.html);
-    
+
     console.log("Converting HTML to PDF using Puppeteer...");
     const pdfBuffer = await generatePdfFromHtml(htmlDocument);
 
