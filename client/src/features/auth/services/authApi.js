@@ -1,7 +1,10 @@
 import axios from "axios";
 
+const API_BASE_URL = "https://prepwise-2.onrender.com";
+// For local development, change to: "http://localhost:3001"
+
 const api = axios.create({
-  baseURL: "https://prepwise-2.onrender.com",
+  baseURL: API_BASE_URL,
   withCredentials: true,
 });
 
