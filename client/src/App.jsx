@@ -3,7 +3,8 @@ import Register from "./features/auth/pages/Register";
 import Login from "./features/auth/pages/Login";
 import Protected from "./features/auth/components/Protected";
 import { AuthProvider } from "./features/auth/authProvider";
-
+import Home from "./features/interview/pages/Home";
+import Interview from "./features/interview/pages/Interview";
 function App() {
   return (
     <AuthProvider>
@@ -15,7 +16,15 @@ function App() {
             path="/"
             element={
               <Protected>
-                <h1>Home page</h1>
+                <Home />
+              </Protected>
+            }
+          />
+          <Route
+            path="/interviewReport"
+            element={
+              <Protected>
+                <Interview />
               </Protected>
             }
           />
