@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API_BASE_URL = "https://prepwise-4.onrender.com";
+const API_BASE_URL = "https://prepwise-5.onrender.com";
 // For local development, change to: "http://localhost:3001"
 
 const api = axios.create({
