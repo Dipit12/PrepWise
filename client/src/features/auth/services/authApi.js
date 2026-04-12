@@ -15,6 +15,7 @@ export async function register({ username, email, password }) {
       email,
       password,
     });
+    console.log("Register response:", response);
     return response.data;
   } catch (err) {
     console.error("Register API error:", err);
@@ -24,13 +25,21 @@ export async function register({ username, email, password }) {
 
 export async function login({ email, password }) {
   try {
+    console.log("Attempting login with:", { email });
     const response = await api.post("/api/auth/login", {
       email,
       password,
     });
+    console.log("Login response status:", response.status);
+    console.log("Login response data:", response.data);
+    console.log("Login response headers:", response.headers);
     return response.data;
   } catch (err) {
-    console.error("Login API error:", err);
+    console.error("Login request error:", err);
+    if (err.response) {
+      console.error("Login error response status:", err.response.status);
+      console.error("Login error response data:", err.response.data);
+    }
     throw err;
   }
 }

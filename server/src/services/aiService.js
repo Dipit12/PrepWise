@@ -215,24 +215,37 @@ ${trimmed}
 }
 
 async function generatePdfFromHtml(htmlContent) {
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
-  });
-
   try {
-    const page = await browser.newPage();
-    await page.setContent(htmlContent, { waitUntil: "networkidle0" });
-
-    const pdfData = await page.pdf({
-      format: "A4",
-      printBackground: true,
-      preferCSSPageSize: true,
+    console.log("Starting Puppeteer browser launch...");
+    const browser = await puppeteer.launch({
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
     });
 
-    return Buffer.isBuffer(pdfData) ? pdfData : Buffer.from(pdfData);
-  } finally {
-    await browser.close();
+    try {
+      console.log("Browser launched, creating new page...");
+      const page = await browser.newPage();
+      
+      console.log("Setting page content...");
+      await page.setContent(htmlContent, { waitUntil: "networkidle0" });
+
+      console.log("Generating PDF...");
+      const pdfData = await page.pdf({
+        format: "A4",
+        printBackground: true,
+        preferCSSPageSize: true,
+      });
+
+      console.log("PDF generated successfully, size:", pdfData?.length || 0);
+      return Buffer.isBuffer(pdfData) ? pdfData : Buffer.from(pdfData);
+    } finally {
+      console.log("Closing browser...");
+      await browser.close();
+    }
+  } catch (err) {
+    console.error("PDF generation error:", err.message);
+    console.error("Error stack:", err.stack);
+    throw err;
   }
 }
 
@@ -300,7 +313,10 @@ export async function generateResumePDF({
   selfDescription,
   jobDescription,
 }) {
-  const prompt = `
+  try {
+    console.log("Starting resume PDF generation...");
+    
+    const prompt = `
 You are a senior resume writer and ATS optimization expert.
 
 Generate a polished, modern, ATS-friendly one-page resume in valid HTML.
@@ -325,31 +341,42 @@ Target Job Description:
 ${jobDescription}
 `;
 
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: prompt,
-    config: {
-      temperature: 0.25,
-      responseMimeType: "application/json",
-      responseSchema: resumeHtmlResponseSchema,
-    },
-  });
+    console.log("Calling Google Generative AI for resume HTML generation...");
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+      config: {
+        temperature: 0.25,
+        responseMimeType: "application/json",
+        responseSchema: resumeHtmlResponseSchema,
+      },
+    });
 
-  const rawText = await readModelText(response);
-  const parsed = parseJsonFromModelText(rawText);
+    console.log("Received response from Google Generative AI");
+    const rawText = await readModelText(response);
+    const parsed = parseJsonFromModelText(rawText);
 
-  const validated = resumeHtmlSchema.safeParse(parsed);
-  if (!validated.success) {
-    console.error(
-      "Resume HTML schema validation failed:",
-      validated.error.issues,
-    );
-    console.error("Raw model output:", rawText);
-    throw new Error("Model JSON did not match resume html schema");
+    console.log("Validating resume HTML schema...");
+    const validated = resumeHtmlSchema.safeParse(parsed);
+    if (!validated.success) {
+      console.error(
+        "Resume HTML schema validation failed:",
+        validated.error.issues,
+      );
+      console.error("Raw model output:", rawText);
+      throw new Error("Model JSON did not match resume html schema");
+    }
+
+    console.log("Ensuring full HTML document...");
+    const htmlDocument = ensureFullHtmlDocument(validated.data.html);
+    
+    console.log("Converting HTML to PDF using Puppeteer...");
+    const pdfBuffer = await generatePdfFromHtml(htmlDocument);
+
+    console.log("Resume PDF generation completed successfully");
+    return pdfBuffer;
+  } catch (err) {
+    console.error("Resume PDF generation failed:", err.message);
+    throw err;
   }
-
-  const htmlDocument = ensureFullHtmlDocument(validated.data.html);
-  const pdfBuffer = await generatePdfFromHtml(htmlDocument);
-
-  return pdfBuffer;
 }

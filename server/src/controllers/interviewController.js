@@ -119,6 +119,8 @@ export async function generateResumePdfController(req, res) {
   const { interviewReportID } = req.params;
 
   try {
+    console.log("Starting PDF generation for report:", interviewReportID);
+    
     if (!mongoose.Types.ObjectId.isValid(interviewReportID)) {
       return res.status(400).json({ msg: "Invalid interview report ID" });
     }
@@ -130,6 +132,7 @@ export async function generateResumePdfController(req, res) {
     });
 
     if (!interviewReport) {
+      console.log("Interview report not found for ID:", interviewReportID);
       return res.status(404).json({
         msg: "Interview report not found",
       });
@@ -137,12 +140,16 @@ export async function generateResumePdfController(req, res) {
 
     const { resume, jobDescription, selfDescription, title } = interviewReport;
 
+    console.log("Generating PDF with resume length:", resume?.length || 0);
+    
     const pdfBuffer = await generateResumePDF({
       resume,
       jobDescription,
       selfDescription,
       title,
     });
+
+    console.log("PDF generated successfully, size:", pdfBuffer.length);
 
     const safeFileTitle =
       (title || "updated_resume")
@@ -161,6 +168,7 @@ export async function generateResumePdfController(req, res) {
     return res.status(200).send(pdfBuffer);
   } catch (err) {
     console.error("Generate resume PDF error:", err);
+    console.error("Error stack:", err.stack);
     return res.status(500).json({
       msg: "Failed to generate resume PDF",
       error: err.message,
