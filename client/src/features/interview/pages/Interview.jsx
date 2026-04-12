@@ -1,161 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import "../style/Interview.scss";
-
-const report = {
-  matchScore: 75,
-  technicalQuestions: [
-    {
-      question:
-        "Describe the difference between null and undefined in JavaScript.",
-      intention:
-        "Assess fundamental JavaScript knowledge and understanding of primitive types.",
-      answer:
-        "Undefined means a variable has been declared but not assigned a value. Null is an intentional assignment that represents no value.",
-    },
-    {
-      question: "Explain the concept of the virtual DOM in React.",
-      intention:
-        "Evaluate understanding of React rendering and performance optimization.",
-      answer:
-        "React compares the old and new virtual DOM trees and updates only the changed parts in the real DOM.",
-    },
-    {
-      question:
-        "How would you handle authentication and authorization in a Node.js/Express app?",
-      intention:
-        "Test security best practices and auth architecture knowledge.",
-      answer:
-        "Use JWT/session tokens for authentication and role-based middleware for authorization on protected routes.",
-    },
-    {
-      question:
-        "What is the difference between SQL and NoSQL databases? When would you choose each?",
-      intention: "Gauge understanding of database trade-offs and use cases.",
-      answer:
-        "SQL works best for relational, structured data and strict consistency; NoSQL is better for flexible schema and horizontal scale.",
-    },
-    {
-      question: "Describe a scenario where you would use a RESTful API.",
-      intention: "Assess API design understanding and practical usage.",
-      answer:
-        "REST is ideal for client-server communication where resources are accessed via standard HTTP methods.",
-    },
-  ],
-  behavioralQuestions: [
-    {
-      question:
-        "Tell me about a time you had to debug a complex issue. What was your process?",
-      intention: "Understand structured problem-solving approach.",
-      answer:
-        "I isolated the issue, reproduced it, inspected state/inputs, tested hypotheses, then verified the fix with regression checks.",
-    },
-    {
-      question:
-        "Describe a project you are proud of. What was your role and challenge?",
-      intention: "Assess ownership, impact, and communication.",
-      answer:
-        "I owned backend integration, optimized processing for large files, and balanced feature quality with cost constraints.",
-    },
-    {
-      question:
-        "How do you stay up-to-date with new technologies in full-stack development?",
-      intention: "Evaluate learning mindset and consistency.",
-      answer:
-        "I follow official docs, newsletters, and implement mini projects to validate understanding.",
-    },
-    {
-      question:
-        "Tell me about a disagreement with a teammate. How did you handle it?",
-      intention: "Assess collaboration and conflict resolution.",
-      answer:
-        "I aligned on outcomes, discussed trade-offs with data, and reached a practical compromise.",
-    },
-    {
-      question: "How do you approach learning a new framework quickly?",
-      intention: "Measure adaptability and learning strategy.",
-      answer:
-        "I start with fundamentals, build a small project, then iterate with deeper concepts and best practices.",
-    },
-  ],
-  skillGaps: [
-    {
-      skill: "Advanced Cloud Architecture Patterns (AWS/GCP)",
-      severity: "high",
-    },
-    {
-      skill: "Deep Data Structures and Algorithms under time pressure",
-      severity: "high",
-    },
-    { skill: "Performance Tuning and Observability", severity: "medium" },
-    { skill: "Experience with PostgreSQL", severity: "low" },
-    { skill: "CI/CD Pipeline Implementation", severity: "medium" },
-  ],
-  preparationPlan: [
-    {
-      day: 1,
-      focus: "Core JavaScript & React Fundamentals",
-      tasks: [
-        "Review closures, prototypes, and async/await.",
-        "Practice hooks: useState, useEffect, useContext.",
-        "Revisit state management patterns.",
-      ],
-    },
-    {
-      day: 2,
-      focus: "Node.js & Express API Development",
-      tasks: [
-        "Review event loop and modules.",
-        "Build REST endpoints with Express.",
-        "Implement middleware for errors and logging.",
-      ],
-    },
-    {
-      day: 3,
-      focus: "Databases (MongoDB & PostgreSQL)",
-      tasks: [
-        "Review MongoDB schema/query patterns.",
-        "Practice SQL queries and joins.",
-        "Compare relational vs document modeling.",
-      ],
-    },
-    {
-      day: 4,
-      focus: "Authentication, Authorization & Security",
-      tasks: [
-        "Deep dive into JWT implementation.",
-        "Study XSS/CSRF protections.",
-        "Review OAuth basics.",
-      ],
-    },
-    {
-      day: 5,
-      focus: "Testing & CI/CD",
-      tasks: [
-        "Write unit tests with Jest.",
-        "Practice React Testing Library flows.",
-        "Create a simple GitHub Actions pipeline.",
-      ],
-    },
-    {
-      day: 6,
-      focus: "System Design & Cloud Basics",
-      tasks: [
-        "Study scalability and availability trade-offs.",
-        "Read AWS/GCP service fundamentals.",
-        "Practice system design communication.",
-      ],
-    },
-    {
-      day: 7,
-      focus: "Mock Interview & Review",
-      tasks: [
-        "Run a technical mock interview.",
-        "Practice STAR for behavioral answers.",
-        "Summarize key revision points.",
-      ],
-    },
-  ],
-};
+import { useInterview } from "../hook/useInterview";
 
 const tabs = [
   { key: "technical", label: "Technical Questions" },
@@ -164,26 +10,133 @@ const tabs = [
 ];
 
 export default function Interview() {
+  const navigate = useNavigate();
+  const { interviewID } = useParams();
+
+  const {
+    loading,
+    report,
+    reports,
+    generateReportByID,
+    generateAllInterviewReports,
+  } = useInterview();
+
   const [activeTab, setActiveTab] = useState("technical");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const loadHistory = async () => {
+      try {
+        await generateAllInterviewReports();
+      } catch (err) {
+        // History is best-effort. Keep page usable even if this fails.
+        console.error("Failed to load report history:", err);
+      }
+    };
+
+    loadHistory();
+  }, [generateAllInterviewReports]);
+
+  useEffect(() => {
+    const loadReport = async () => {
+      if (!interviewID) {
+        setError("");
+        return;
+      }
+
+      try {
+        setError("");
+        await generateReportByID(interviewID);
+      } catch (err) {
+        const msg =
+          err?.response?.data?.msg ||
+          err?.response?.data?.error ||
+          err?.message ||
+          "Failed to load interview report.";
+        setError(msg);
+      }
+    };
+
+    loadReport();
+  }, [interviewID, generateReportByID]);
+
+  const technicalQuestions = useMemo(
+    () => report?.technicalQuestions ?? [],
+    [report],
+  );
+  const behavioralQuestions = useMemo(
+    () => report?.behavioralQuestions ?? [],
+    [report],
+  );
+  const preparationPlan = useMemo(
+    () => report?.preparationPlan ?? [],
+    [report],
+  );
+  const skillGaps = useMemo(() => report?.skillGaps ?? [], [report]);
 
   const severityCount = useMemo(() => {
-    return report.skillGaps.reduce(
+    return skillGaps.reduce(
       (acc, gap) => {
-        acc[gap.severity] += 1;
+        const level = String(gap?.severity || "").toLowerCase();
+        if (level === "high") acc.high += 1;
+        if (level === "medium") acc.medium += 1;
+        if (level === "low") acc.low += 1;
         return acc;
       },
       { high: 0, medium: 0, low: 0 },
     );
-  }, []);
+  }, [skillGaps]);
+
+  const openReportFromHistory = (id) => {
+    if (!id) return;
+    navigate(`/workspace/interview-report/${id}`);
+  };
+
+  const formatDate = (value) => {
+    if (!value) return "Unknown date";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "Unknown date";
+    return date.toLocaleString();
+  };
+
+  if (loading && !report) {
+    return (
+      <main className="interview-page">
+        <div className="interview-shell">
+          <section className="interview-main panel">
+            <div className="section-header">
+              <h3>Loading interview report...</h3>
+              <p>Please wait while we fetch your report.</p>
+            </div>
+          </section>
+        </div>
+      </main>
+    );
+  }
+
+  if (error) {
+    return (
+      <main className="interview-page">
+        <div className="interview-shell">
+          <section className="interview-main panel">
+            <div className="section-header">
+              <h3>Unable to load report</h3>
+              <p>{error}</p>
+            </div>
+          </section>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="interview-page">
       <div className="interview-shell">
         <aside className="interview-nav panel">
           <div className="brand">
-            <h2>Interview Report</h2>
+            <h2>{report?.title || "Interview Report"}</h2>
             <p>Match Score</p>
-            <span className="score-badge">{report.matchScore}%</span>
+            <span className="score-badge">{report?.matchScore ?? 0}%</span>
           </div>
 
           <nav className="tab-list" aria-label="Interview report sections">
@@ -192,87 +145,179 @@ export default function Interview() {
                 key={tab.key}
                 className={`tab-btn ${activeTab === tab.key ? "active" : ""}`}
                 onClick={() => setActiveTab(tab.key)}
+                type="button"
               >
                 {tab.label}
               </button>
             ))}
           </nav>
+
+          <div className="history-list" style={{ marginTop: "1rem" }}>
+            <p
+              style={{
+                margin: "0 0 0.55rem",
+                fontSize: "0.82rem",
+                color: "#9cadcc",
+                fontWeight: 600,
+              }}
+            >
+              Previous Reports
+            </p>
+
+            {reports.length === 0 ? (
+              <p style={{ margin: 0, fontSize: "0.84rem", color: "#9cadcc" }}>
+                No previous reports yet.
+              </p>
+            ) : (
+              reports.map((item) => {
+                const id = item?._id;
+                const isActive = id && id === interviewID;
+
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => openReportFromHistory(id)}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      borderRadius: "0.7rem",
+                      border: isActive
+                        ? "1px solid rgba(6,182,212,0.55)"
+                        : "1px solid rgba(148,163,184,0.25)",
+                      background: isActive
+                        ? "linear-gradient(90deg, rgba(6,182,212,0.2), rgba(59,130,246,0.2))"
+                        : "rgba(15, 23, 42, 0.45)",
+                      color: "#e8efff",
+                      padding: "0.58rem 0.65rem",
+                      marginBottom: "0.5rem",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: "0.84rem",
+                        fontWeight: 600,
+                        lineHeight: 1.35,
+                      }}
+                    >
+                      {item?.title || "Untitled Report"}
+                    </div>
+                    <div
+                      style={{
+                        marginTop: "0.2rem",
+                        fontSize: "0.76rem",
+                        color: "#9cadcc",
+                      }}
+                    >
+                      {formatDate(item?.createdAt)}
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
         </aside>
 
         <section className="interview-main panel">
-          {activeTab === "technical" && (
+          {!report ? (
+            <div className="section-header">
+              <h3>No report selected</h3>
+              <p>
+                Generate a new report from workspace or select one from Previous
+                Reports.
+              </p>
+            </div>
+          ) : (
             <>
-              <header className="section-header">
-                <h3>Technical Questions</h3>
-                <p>
-                  Likely technical questions with intent and strong answer
-                  direction.
-                </p>
-              </header>
-              <div className="qa-list">
-                {report.technicalQuestions.map((item, idx) => (
-                  <article key={idx} className="qa-card">
-                    <h4>{item.question}</h4>
+              {activeTab === "technical" && (
+                <>
+                  <header className="section-header">
+                    <h3>Technical Questions</h3>
                     <p>
-                      <span>Intention:</span> {item.intention}
+                      Likely technical questions with intent and strong answer
+                      direction.
                     </p>
-                    <p>
-                      <span>How to answer:</span> {item.answer}
-                    </p>
-                  </article>
-                ))}
-              </div>
-            </>
-          )}
+                  </header>
+                  <div className="qa-list">
+                    {technicalQuestions.length === 0 ? (
+                      <p>No technical questions available.</p>
+                    ) : (
+                      technicalQuestions.map((item, idx) => (
+                        <article key={idx} className="qa-card">
+                          <h4>{item?.question}</h4>
+                          <p>
+                            <span>Intention:</span> {item?.intention}
+                          </p>
+                          <p>
+                            <span>How to answer:</span> {item?.answer}
+                          </p>
+                        </article>
+                      ))
+                    )}
+                  </div>
+                </>
+              )}
 
-          {activeTab === "behavioral" && (
-            <>
-              <header className="section-header">
-                <h3>Behavioral Questions</h3>
-                <p>
-                  Practice responses using STAR format for clarity and impact.
-                </p>
-              </header>
-              <div className="qa-list">
-                {report.behavioralQuestions.map((item, idx) => (
-                  <article key={idx} className="qa-card">
-                    <h4>{item.question}</h4>
+              {activeTab === "behavioral" && (
+                <>
+                  <header className="section-header">
+                    <h3>Behavioral Questions</h3>
                     <p>
-                      <span>Intention:</span> {item.intention}
+                      Practice responses using STAR format for clarity and
+                      impact.
                     </p>
-                    <p>
-                      <span>How to answer:</span> {item.answer}
-                    </p>
-                  </article>
-                ))}
-              </div>
-            </>
-          )}
+                  </header>
+                  <div className="qa-list">
+                    {behavioralQuestions.length === 0 ? (
+                      <p>No behavioral questions available.</p>
+                    ) : (
+                      behavioralQuestions.map((item, idx) => (
+                        <article key={idx} className="qa-card">
+                          <h4>{item?.question}</h4>
+                          <p>
+                            <span>Intention:</span> {item?.intention}
+                          </p>
+                          <p>
+                            <span>How to answer:</span> {item?.answer}
+                          </p>
+                        </article>
+                      ))
+                    )}
+                  </div>
+                </>
+              )}
 
-          {activeTab === "roadmap" && (
-            <>
-              <header className="section-header">
-                <h3>7-Day Preparation Roadmap</h3>
-                <p>
-                  Daily focus areas and actionable tasks to improve interview
-                  readiness.
-                </p>
-              </header>
-              <div className="roadmap-grid">
-                {report.preparationPlan.map((dayPlan) => (
-                  <article key={dayPlan.day} className="day-card">
-                    <div className="day-head">
-                      <span className="day-pill">Day {dayPlan.day}</span>
-                      <h4>{dayPlan.focus}</h4>
-                    </div>
-                    <ul>
-                      {dayPlan.tasks.map((task, i) => (
-                        <li key={i}>{task}</li>
-                      ))}
-                    </ul>
-                  </article>
-                ))}
-              </div>
+              {activeTab === "roadmap" && (
+                <>
+                  <header className="section-header">
+                    <h3>7-Day Preparation Roadmap</h3>
+                    <p>
+                      Daily focus areas and actionable tasks to improve
+                      interview readiness.
+                    </p>
+                  </header>
+                  <div className="roadmap-grid">
+                    {preparationPlan.length === 0 ? (
+                      <p>No roadmap available.</p>
+                    ) : (
+                      preparationPlan.map((dayPlan) => (
+                        <article key={dayPlan?.day} className="day-card">
+                          <div className="day-head">
+                            <span className="day-pill">Day {dayPlan?.day}</span>
+                            <h4>{dayPlan?.focus}</h4>
+                          </div>
+                          <ul>
+                            {(dayPlan?.tasks ?? []).map((task, i) => (
+                              <li key={i}>{task}</li>
+                            ))}
+                          </ul>
+                        </article>
+                      ))
+                    )}
+                  </div>
+                </>
+              )}
             </>
           )}
         </section>
@@ -294,12 +339,19 @@ export default function Interview() {
           </div>
 
           <div className="skills-wrap">
-            {report.skillGaps.map((gap, idx) => (
-              <article key={idx} className={`skill-chip ${gap.severity}`}>
-                <span>{gap.skill}</span>
-                <small>{gap.severity}</small>
-              </article>
-            ))}
+            {skillGaps.length === 0 ? (
+              <p>No skill gaps reported.</p>
+            ) : (
+              skillGaps.map((gap, idx) => {
+                const severity = String(gap?.severity || "").toLowerCase();
+                return (
+                  <article key={idx} className={`skill-chip ${severity}`}>
+                    <span>{gap?.skill}</span>
+                    <small>{severity}</small>
+                  </article>
+                );
+              })
+            )}
           </div>
         </aside>
       </div>

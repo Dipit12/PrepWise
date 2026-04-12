@@ -1,6 +1,10 @@
 import { Router } from "express";
 import authMiddleware from "../middleware/authMiddleware.js";
-import { generateInterViewReportController } from "../controllers/interviewController.js";
+import {
+  generateInterViewReportController,
+  getInterviewReportByID,
+  getAllInterviewReport,
+} from "../controllers/interviewController.js";
 import { upload } from "../middleware/fileMiddleware.js";
 const interviewRouter = Router();
 
@@ -17,4 +21,23 @@ interviewRouter.post(
   generateInterViewReportController,
 );
 
+/**
+ * @route GET /api/interview/report/:interviewID
+ * @description get interview report by interview ID
+ * @access private
+ */
+
+interviewRouter.get(
+  "/report/:interviewID",
+  authMiddleware,
+  getInterviewReportByID,
+);
+
+/**
+ * @route GET /api/interview/
+ * @description get all interview reports of logged in user
+ * @access private
+ */
+
+interviewRouter.get("/", authMiddleware, getAllInterviewReport);
 export default interviewRouter;

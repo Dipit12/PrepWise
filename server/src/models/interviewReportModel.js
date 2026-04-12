@@ -100,6 +100,10 @@ const interviewReportSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
   },
+  title: {
+    type: String,
+    required: [true, "Job title is required"],
+  },
 });
 
 const InterviewReport = mongoose.model(

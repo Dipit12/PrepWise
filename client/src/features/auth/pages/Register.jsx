@@ -13,8 +13,8 @@ const Register = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    await handleRegister();
-    navigate("/");
+    await handleRegister({ username, email, password });
+    navigate("/workspace");
   };
 
   if (loading) return <p>Loading...</p>;
