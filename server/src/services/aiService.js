@@ -1,8 +1,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { z } from "zod";
 import dotenv from "dotenv";
-import puppeteer from "puppeteer";
-import chromium from "@sparticuz/chromium";
+import PDFDocument from "pdfkit";
+import { Readable } from "stream";
 
 dotenv.config();
 
@@ -180,79 +180,114 @@ function parseJsonFromModelText(rawText) {
   }
 }
 
-function ensureFullHtmlDocument(html) {
-  const trimmed = (html || "").trim();
-  if (/<!doctype html>/i.test(trimmed) || /<html[\s>]/i.test(trimmed)) {
-    return trimmed;
-  }
+function stripHtmlTags(html) {
+  return html
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Generated Resume</title>
-  <style>
-    @page { size: A4; margin: 18mm 14mm; }
-    body {
-      font-family: Inter, Arial, sans-serif;
-      color: #0f172a;
-      line-height: 1.45;
-      font-size: 12px;
-      margin: 0;
-    }
-    h1,h2,h3 { margin: 0 0 8px; }
-    h1 { font-size: 24px; }
-    h2 { font-size: 15px; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; margin-top: 14px; }
-    p { margin: 0 0 8px; }
-    ul { margin: 0 0 8px 18px; }
-    li { margin-bottom: 4px; }
-  </style>
-</head>
-<body>
-${trimmed}
-</body>
-</html>`;
+// Convert HTML to plain text (simple version)
+function htmlToPlainText(html) {
+  let text = html;
+
+  // Replace header tags with newlines
+  text = text.replace(/<h[1-6][^>]*>/gi, "\n\n");
+  text = text.replace(/<\/h[1-6]>/gi, "\n");
+
+  // Replace paragraph tags with newlines
+  text = text.replace(/<p[^>]*>/gi, "\n");
+  text = text.replace(/<\/p>/gi, "\n");
+
+  // Replace line breaks
+  text = text.replace(/<br\s*\/?>/gi, "\n");
+
+  // Replace list items
+  text = text.replace(/<li[^>]*>/gi, "• ");
+  text = text.replace(/<\/li>/gi, "\n");
+
+  // Remove all other HTML tags
+  text = text.replace(/<[^>]*>/g, "");
+
+  // Decode HTML entities
+  text = text.replace(/&nbsp;/g, " ");
+  text = text.replace(/&lt;/g, "<");
+  text = text.replace(/&gt;/g, ">");
+  text = text.replace(/&amp;/g, "&");
+  text = text.replace(/&quot;/g, '"');
+  text = text.replace(/&#39;/g, "'");
+
+  // Clean up multiple spaces and newlines
+  text = text.replace(/\n\n+/g, "\n\n");
+  text = text.replace(/[ \t]+/g, " ");
+
+  return text.trim();
 }
 
 async function generatePdfFromHtml(htmlContent) {
   try {
-    console.log(
-      "Starting Puppeteer browser launch with @sparticuz/chromium...",
-    );
+    console.log("Starting PDF generation with pdfkit...");
 
-    const launchArgs = await chromium.args;
-    const executablePath = await chromium.executablePath;
-
-    const browser = await puppeteer.launch({
-      args: launchArgs,
-      executablePath,
-      headless: chromium.headless,
-    });
-
-    try {
-      console.log("Browser launched, creating new page...");
-      const page = await browser.newPage();
-
-      console.log("Setting page content...");
-      await page.setContent(htmlContent, { waitUntil: "networkidle0" });
-
-      console.log("Generating PDF...");
-      const pdfData = await page.pdf({
-        format: "A4",
-        printBackground: true,
-        preferCSSPageSize: true,
+    return new Promise((resolve, reject) => {
+      const doc = new PDFDocument({
+        bufferPages: true,
+        margin: 50,
+        size: "A4",
       });
 
-      console.log("PDF generated successfully, size:", pdfData?.length || 0);
-      return Buffer.isBuffer(pdfData) ? pdfData : Buffer.from(pdfData);
-    } finally {
-      console.log("Closing browser...");
-      await browser.close();
-    }
+      const chunks = [];
+
+      doc.on("data", (chunk) => {
+        chunks.push(chunk);
+      });
+
+      doc.on("end", () => {
+        const pdfBuffer = Buffer.concat(chunks);
+        console.log("PDF generated successfully, size:", pdfBuffer.length);
+        resolve(pdfBuffer);
+      });
+
+      doc.on("error", (err) => {
+        console.error("PDF generation error:", err);
+        reject(err);
+      });
+
+      try {
+        // Convert HTML to plain text
+        const plainText = htmlToPlainText(htmlContent);
+
+        // Set font and add content
+        doc.fontSize(11).font("Helvetica");
+
+        const lines = plainText.split("\n");
+        let lineHeight = 0;
+
+        for (const line of lines) {
+          if (doc.y > doc.page.height - 50) {
+            doc.addPage();
+          }
+
+          if (line.trim() === "") {
+            doc.moveDown(0.5);
+          } else if (line.startsWith("•")) {
+            doc.fontSize(10).text(line, { align: "left" });
+          } else {
+            doc.fontSize(11).text(line, { align: "left" });
+          }
+        }
+
+        doc.end();
+      } catch (err) {
+        doc.end();
+        reject(err);
+      }
+    });
   } catch (err) {
     console.error("PDF generation error:", err.message);
-    console.error("Error stack:", err.stack);
     throw err;
   }
 }
@@ -336,8 +371,7 @@ Requirements:
 - Include sections: Summary, Skills, Experience, Projects, Education
 - Tailor wording to the provided Job Description
 - Keep concise and impactful bullet points
-- Keep styling inline or in <style> block only (self-contained)
-- Must be printable to A4 PDF with clean layout
+- Must be one page only
 
 Candidate Resume Source:
 ${resume}
@@ -375,11 +409,8 @@ ${jobDescription}
       throw new Error("Model JSON did not match resume html schema");
     }
 
-    console.log("Ensuring full HTML document...");
-    const htmlDocument = ensureFullHtmlDocument(validated.data.html);
-
-    console.log("Converting HTML to PDF using Puppeteer...");
-    const pdfBuffer = await generatePdfFromHtml(htmlDocument);
+    console.log("Converting HTML to PDF...");
+    const pdfBuffer = await generatePdfFromHtml(validated.data.html);
 
     console.log("Resume PDF generation completed successfully");
     return pdfBuffer;
