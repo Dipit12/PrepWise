@@ -407,7 +407,7 @@ export default function Landing() {
           </Link>
         </section>
 
-        <p className="footer-note">Made with love by Dipit Madan</p>
+        <p className="footer-note">Made with ❤️ by Dipit Madan</p>
       </div>
     </main>
   );

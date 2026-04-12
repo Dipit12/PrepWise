@@ -4,6 +4,8 @@ import {
   generateInterviewReport,
   getInterviewReportByID,
   getAllInterviewReport,
+  generateResumePDF,
+  downloadResumePDF,
 } from "../services/interviewApi";
 
 export const useInterview = () => {
@@ -18,15 +20,11 @@ export const useInterview = () => {
 
   const generateReport = useCallback(
     async ({ title, jobDescription, selfDescription, resume }) => {
-      if (!jobDescription?.trim()) {
+      if (!jobDescription?.trim())
         throw new Error("jobDescription is required");
-      }
-      if (!selfDescription?.trim()) {
+      if (!selfDescription?.trim())
         throw new Error("selfDescription is required");
-      }
-      if (!resume) {
-        throw new Error("resume file is required");
-      }
+      if (!resume) throw new Error("resume file is required");
 
       setLoading(true);
       try {
@@ -45,9 +43,6 @@ export const useInterview = () => {
 
         setReport(generatedReport);
         return response;
-      } catch (err) {
-        console.error("Failed to generate interview report:", err);
-        throw err;
       } finally {
         setLoading(false);
       }
@@ -57,22 +52,15 @@ export const useInterview = () => {
 
   const generateReportByID = useCallback(
     async (interviewID) => {
-      if (!interviewID) {
-        throw new Error("interviewID is required");
-      }
+      if (!interviewID) throw new Error("interviewID is required");
 
       setLoading(true);
       try {
         const response = await getInterviewReportByID(interviewID);
-
         const fetchedReport =
           response?.interviewReport ?? response?.report ?? null;
         setReport(fetchedReport);
-
         return response;
-      } catch (err) {
-        console.error("Failed to fetch interview report by ID:", err);
-        throw err;
       } finally {
         setLoading(false);
       }
@@ -84,21 +72,40 @@ export const useInterview = () => {
     setLoading(true);
     try {
       const response = await getAllInterviewReport();
-      const allReports = response?.interviewReports ?? [];
-
-      setReports(allReports);
+      setReports(response?.interviewReports ?? []);
       return response;
-    } catch (err) {
-      console.error("Failed to fetch all interview reports:", err);
-      throw err;
     } finally {
       setLoading(false);
     }
   }, [setLoading, setReports]);
 
-  const clearReport = useCallback(() => {
-    setReport(null);
-  }, [setReport]);
+  const generateResumePdfByInterviewID = useCallback(
+    async (interviewReportID) => {
+      if (!interviewReportID) throw new Error("interviewReportID is required");
+      setLoading(true);
+      try {
+        return await generateResumePDF({ interviewReportID }); // { blob, fileName }
+      } finally {
+        setLoading(false);
+      }
+    },
+    [setLoading],
+  );
+
+  const downloadResumePdfByInterviewID = useCallback(
+    async (interviewReportID) => {
+      if (!interviewReportID) throw new Error("interviewReportID is required");
+      setLoading(true);
+      try {
+        return await downloadResumePDF({ interviewReportID }); // { fileName }
+      } finally {
+        setLoading(false);
+      }
+    },
+    [setLoading],
+  );
+
+  const clearReport = useCallback(() => setReport(null), [setReport]);
 
   return {
     loading,
@@ -110,6 +117,8 @@ export const useInterview = () => {
     generateReport,
     generateReportByID,
     generateAllInterviewReports,
+    generateResumePdfByInterviewID,
+    downloadResumePdfByInterviewID,
   };
 };
 

@@ -12,17 +12,18 @@ const tabs = [
 export default function Interview() {
   const navigate = useNavigate();
   const { interviewID } = useParams();
-
   const {
     loading,
     report,
     reports,
     generateReportByID,
     generateAllInterviewReports,
+    downloadResumePdfByInterviewID,
   } = useInterview();
 
   const [activeTab, setActiveTab] = useState("technical");
   const [error, setError] = useState("");
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   useEffect(() => {
     const loadHistory = async () => {
@@ -98,6 +99,28 @@ export default function Interview() {
     if (Number.isNaN(date.getTime())) return "Unknown date";
     return date.toLocaleString();
   };
+  const handleDownloadResumePdf = async () => {
+    const targetId = report?._id || interviewID;
+
+    if (!targetId) {
+      window.alert("No report selected.");
+      return;
+    }
+
+    try {
+      setDownloadingPdf(true);
+      await downloadResumePdfByInterviewID(targetId);
+    } catch (err) {
+      const msg =
+        err?.response?.data?.msg ||
+        err?.response?.data?.error ||
+        err?.message ||
+        "Failed to download updated resume PDF.";
+      window.alert(msg);
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
 
   if (loading && !report) {
     return (
@@ -138,6 +161,17 @@ export default function Interview() {
             <p>Match Score</p>
             <span className="score-badge">{report?.matchScore ?? 0}%</span>
           </div>
+          <button
+            type="button"
+            className="tab-btn"
+            onClick={handleDownloadResumePdf}
+            disabled={downloadingPdf || !report}
+            style={{ marginBottom: "0.7rem" }}
+          >
+            {downloadingPdf
+              ? "Generating PDF..."
+              : "Download Updated Resume PDF"}
+          </button>
 
           <nav className="tab-list" aria-label="Interview report sections">
             {tabs.map((tab) => (

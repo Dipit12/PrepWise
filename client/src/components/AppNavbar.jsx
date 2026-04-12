@@ -44,8 +44,17 @@ const AppNavbar = () => {
                 My Reports
               </NavLink>
 
-              <span className="app-navbar__user" title={user.email}>
-                Hi, {user.username}
+              <span
+                className="app-navbar__user"
+                title={user.email || user.username}
+                style={{
+                  whiteSpace: "normal",
+                  overflowWrap: "anywhere",
+                  maxWidth: "22rem",
+                  lineHeight: 1.2,
+                }}
+              >
+                Hi, {user.username || user.email || "User"}
               </span>
 
               <button

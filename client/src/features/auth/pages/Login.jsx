@@ -1,7 +1,7 @@
 import "../authForm.scss";
 import { useAuth } from "../hooks/useAuth";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 
 const Login = () => {
   const navigate = useNavigate();
@@ -11,8 +11,24 @@ const Login = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    await handleLogin({ email, password });
-    navigate("/workspace");
+
+    if (!email.trim() || !password.trim()) {
+      window.alert("Please enter both email and password.");
+      return;
+    }
+
+    try {
+      await handleLogin({ email: email.trim(), password });
+      navigate("/workspace");
+    } catch (err) {
+      const message =
+        err?.response?.data?.msg ||
+        err?.response?.data?.error ||
+        err?.message ||
+        "Login failed. Please check your credentials and try again.";
+
+      window.alert(message);
+    }
   };
 
   if (loading) {
@@ -22,48 +38,52 @@ const Login = () => {
       </main>
     );
   }
+
   return (
-    <>
-      <main>
-        <div className="form-container">
-          <h1>Login</h1>
-          <form onSubmit={handleSubmit}>
-            <div className="input-group">
-              <label htmlFor="email">Email</label>
-              <input
-                onChange={(e) => {
-                  setEmail(e.target.value);
-                }}
-                type="email"
-                name="email"
-                id="email"
-                value={email}
-                placeholder="Enter your email"
-              />
-            </div>
-            <div className="input-group">
-              <label htmlFor="password">Password</label>
-              <input
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                }}
-                type="password"
-                name="password"
-                id="password"
-                value={password}
-                placeholder="Enter your password"
-              />
-            </div>
-            <button type="submit" className="button-primary-btn">
-              Login
-            </button>
-          </form>
-          <p>
-            Dont have an Account? <a href="/register">Register</a>
-          </p>
-        </div>
-      </main>
-    </>
+    <main>
+      <div className="form-container">
+        <h1>Login</h1>
+        <form onSubmit={handleSubmit}>
+          <div className="input-group">
+            <label htmlFor="email">Email</label>
+            <input
+              onChange={(e) => setEmail(e.target.value)}
+              type="email"
+              name="email"
+              id="email"
+              value={email}
+              placeholder="Enter your email"
+              autoComplete="email"
+            />
+          </div>
+
+          <div className="input-group">
+            <label htmlFor="password">Password</label>
+            <input
+              onChange={(e) => setPassword(e.target.value)}
+              type="password"
+              name="password"
+              id="password"
+              value={password}
+              placeholder="Enter your password"
+              autoComplete="current-password"
+            />
+          </div>
+
+          <button
+            type="submit"
+            className="button-primary-btn"
+            disabled={loading}
+          >
+            {loading ? "Logging in..." : "Login"}
+          </button>
+        </form>
+
+        <p>
+          Dont have an Account? <Link to="/register">Register</Link>
+        </p>
+      </div>
+    </main>
   );
 };
 
