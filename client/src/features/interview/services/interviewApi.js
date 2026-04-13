@@ -1,12 +1,4 @@
-import axios from "axios";
-
-const API_BASE_URL = "https://prepwise-18.onrender.com";
-// For local development, change to: "http://localhost:3001"
-
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  withCredentials: true,
-});
+import { api } from "../../../config/api.js";
 
 export const generateInterviewReport = async ({
   title,
