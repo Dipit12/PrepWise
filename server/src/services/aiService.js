@@ -1,16 +1,17 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import OpenAI from "openai";
+import { zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import dotenv from "dotenv";
 import PDFDocument from "pdfkit";
 
 dotenv.config();
 
-const apiKey = process.env.GOOGLE_GENAI_API_KEY;
+const apiKey = process.env.OPENAI_API_KEY;
 if (!apiKey) {
-  throw new Error("GOOGLE_GENAI_API_KEY is not configured");
+  throw new Error("OPENAI_API_KEY is not configured");
 }
 
-const ai = new GoogleGenAI({ apiKey });
+const openai = new OpenAI({ apiKey });
 
 const interviewReportSchema = z.object({
   matchScore: z.number().min(0).max(100),
@@ -56,132 +57,12 @@ const interviewReportSchema = z.object({
   title: z.string().min(1).optional(),
 });
 
-const interviewReportResponseSchema = {
-  type: Type.OBJECT,
-  required: [
-    "matchScore",
-    "technicalQuestions",
-    "behavioralQuestions",
-    "skillGaps",
-    "preparationPlan",
-  ],
-  properties: {
-    matchScore: { type: Type.NUMBER, description: "Score from 0 to 100" },
-    title: {
-      type: Type.STRING,
-      description: "Short report title for this interview prep",
-    },
-    technicalQuestions: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        required: ["question", "intention", "answer"],
-        properties: {
-          question: { type: Type.STRING },
-          intention: { type: Type.STRING },
-          answer: { type: Type.STRING },
-        },
-      },
-    },
-    behavioralQuestions: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        required: ["question", "intention", "answer"],
-        properties: {
-          question: { type: Type.STRING },
-          intention: { type: Type.STRING },
-          answer: { type: Type.STRING },
-        },
-      },
-    },
-    skillGaps: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        required: ["skill", "severity"],
-        properties: {
-          skill: { type: Type.STRING },
-          severity: {
-            type: Type.STRING,
-            enum: ["low", "medium", "high"],
-          },
-        },
-      },
-    },
-    preparationPlan: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        required: ["day", "focus", "tasks"],
-        properties: {
-          day: { type: Type.NUMBER },
-          focus: { type: Type.STRING },
-          tasks: {
-            type: Type.ARRAY,
-            items: { type: Type.STRING },
-          },
-        },
-      },
-    },
-  },
-};
-
 const resumeHtmlSchema = z.object({
   html: z.string().min(1),
 });
 
-const resumeHtmlResponseSchema = {
-  type: Type.OBJECT,
-  required: ["html"],
-  properties: {
-    html: {
-      type: Type.STRING,
-      description:
-        "Complete HTML document for a polished one-page ATS-friendly resume",
-    },
-  },
-};
-
-async function readModelText(response) {
-  if (!response) throw new Error("Empty response from model");
-
-  if (typeof response.text === "string") return response.text;
-  if (typeof response.text === "function") {
-    const maybeText = await response.text();
-    if (typeof maybeText === "string") return maybeText;
-  }
-
-  throw new Error("Model response does not contain readable text");
-}
-
-function stripCodeFences(text) {
-  return text
-    .replace(/^```json\s*/i, "")
-    .replace(/^```\s*/i, "")
-    .replace(/\s*```$/i, "")
-    .trim();
-}
-
-function parseJsonFromModelText(rawText) {
-  const cleaned = stripCodeFences(rawText);
-
-  try {
-    return JSON.parse(cleaned);
-  } catch {
-    // Fallback: extract first JSON object block
-    const start = cleaned.indexOf("{");
-    const end = cleaned.lastIndexOf("}");
-    if (start >= 0 && end > start) {
-      return JSON.parse(cleaned.slice(start, end + 1));
-    }
-    throw new Error("Model did not return valid JSON");
-  }
-}
-
 function parseHtmlToPdfElements(html) {
   const elements = [];
-  let currentPos = 0;
 
   // Remove style tags and their content
   let cleanHtml = html.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
@@ -318,14 +199,24 @@ export async function generateInterviewReport({
   candidateResume,
   selfDescription,
 }) {
-  const prompt = `
-You are an expert interview coach.
-Return ONLY strict JSON (no markdown, no explanation).
+  try {
+    console.log("Starting interview report generation with OpenAI...");
 
+    const response = await openai.responses.parse({
+      model: "gpt-4o-2024-08-06",
+      input: [
+        {
+          role: "system",
+          content:
+            "You are an expert interview coach. Create a tailored interview report based on the provided information.",
+        },
+        {
+          role: "user",
+          content: `
 Create a tailored interview report from:
-- Job Description
-- Candidate Resume
-- Candidate Self Description
+- Job Description: ${jobDescription}
+- Candidate Resume: ${candidateResume}
+- Candidate Self Description: ${selfDescription}
 
 Rules:
 1) matchScore: number from 0 to 100
@@ -333,43 +224,22 @@ Rules:
 3) behavioralQuestions: exactly 5 items
 4) skillGaps: 3 to 6 items with severity in ["low","medium","high"]
 5) preparationPlan: exactly 7 items with day 1..7 and 2-4 tasks each
-6) Use concrete, role-specific content (no placeholders)
+6) Use concrete, role-specific content
 7) Include a short "title" for this report (optional)
+`,
+        },
+      ],
+      text: {
+        format: zodTextFormat(interviewReportSchema, "interview_report"),
+      },
+    });
 
-Job Description:
-${jobDescription}
-
-Candidate Resume:
-${candidateResume}
-
-Self Description:
-${selfDescription}
-`;
-
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: prompt,
-    config: {
-      temperature: 0.2,
-      responseMimeType: "application/json",
-      responseSchema: interviewReportResponseSchema,
-    },
-  });
-
-  const rawText = await readModelText(response);
-  const parsed = parseJsonFromModelText(rawText);
-
-  const validated = interviewReportSchema.safeParse(parsed);
-  if (!validated.success) {
-    console.error(
-      "Interview schema validation failed:",
-      validated.error.issues,
-    );
-    console.error("Raw model output:", rawText);
-    throw new Error("Model JSON did not match interview report schema");
+    console.log("Interview report generated successfully");
+    return response.output_parsed;
+  } catch (err) {
+    console.error("Interview report generation error:", err.message);
+    throw err;
   }
-
-  return validated.data;
 }
 
 export async function generateResumePDF({
@@ -380,11 +250,18 @@ export async function generateResumePDF({
   try {
     console.log("Starting resume PDF generation...");
 
-    const prompt = `
-You are a senior resume writer and ATS optimization expert.
-
+    const response = await openai.responses.parse({
+      model: "gpt-4o-2024-08-06",
+      input: [
+        {
+          role: "system",
+          content:
+            "You are a senior resume writer and ATS optimization expert. Generate a polished, modern, ATS-friendly one-page resume in valid HTML.",
+        },
+        {
+          role: "user",
+          content: `
 Generate a polished, modern, ATS-friendly one-page resume in valid HTML.
-Return ONLY JSON with exactly one key: "html".
 
 Requirements:
 - Valid semantic HTML with proper structure
@@ -404,36 +281,19 @@ ${selfDescription}
 
 Target Job Description:
 ${jobDescription}
-`;
-
-    console.log("Calling Google Generative AI for resume HTML generation...");
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt,
-      config: {
-        temperature: 0.25,
-        responseMimeType: "application/json",
-        responseSchema: resumeHtmlResponseSchema,
+`,
+        },
+      ],
+      text: {
+        format: zodTextFormat(resumeHtmlSchema, "resume_html"),
       },
     });
 
-    console.log("Received response from Google Generative AI");
-    const rawText = await readModelText(response);
-    const parsed = parseJsonFromModelText(rawText);
-
-    console.log("Validating resume HTML schema...");
-    const validated = resumeHtmlSchema.safeParse(parsed);
-    if (!validated.success) {
-      console.error(
-        "Resume HTML schema validation failed:",
-        validated.error.issues,
-      );
-      console.error("Raw model output:", rawText);
-      throw new Error("Model JSON did not match resume html schema");
-    }
+    console.log("Received resume HTML from OpenAI");
+    const htmlContent = response.output_parsed.html;
 
     console.log("Converting HTML to PDF...");
-    const pdfBuffer = await generatePdfFromHtml(validated.data.html);
+    const pdfBuffer = await generatePdfFromHtml(htmlContent);
 
     console.log("Resume PDF generation completed successfully");
     return pdfBuffer;
