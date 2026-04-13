@@ -1,17 +1,19 @@
-import OpenAI from "openai";
-import { zodTextFormat } from "openai/helpers/zod";
+import Groq from "groq-sdk";
 import { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
 import dotenv from "dotenv";
 import PDFDocument from "pdfkit";
 
 dotenv.config();
 
-const apiKey = process.env.OPENAI_API_KEY;
+const apiKey = process.env.GROQ_API_KEY;
 if (!apiKey) {
-  throw new Error("OPENAI_API_KEY is not configured");
+  throw new Error("GROQ_API_KEY is not configured");
 }
 
-const openai = new OpenAI({ apiKey });
+const groq = new Groq({ apiKey });
+
+const GROQ_MODEL = "openai/gpt-oss-20b";
 
 const interviewReportSchema = z.object({
   matchScore: z.number().min(0).max(100),
@@ -61,6 +63,49 @@ const resumeHtmlSchema = z.object({
   html: z.string().min(1),
 });
 
+function buildGroqResponseFormat(name, schema) {
+  return {
+    type: "json_schema",
+    json_schema: {
+      name,
+      strict: false,
+      schema: zodToJsonSchema(schema, name),
+    },
+  };
+}
+
+async function generateStructuredOutput({
+  schemaName,
+  schema,
+  systemPrompt,
+  userPrompt,
+}) {
+  const response = await groq.chat.completions.create({
+    model: GROQ_MODEL,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    response_format: buildGroqResponseFormat(schemaName, schema),
+  });
+
+  const content = response.choices?.[0]?.message?.content;
+
+  if (!content) {
+    throw new Error("Groq returned an empty response");
+  }
+
+  let parsed;
+
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error("Groq returned invalid JSON");
+  }
+
+  return schema.parse(parsed);
+}
+
 function parseHtmlToPdfElements(html) {
   const elements = [];
 
@@ -68,7 +113,8 @@ function parseHtmlToPdfElements(html) {
   let cleanHtml = html.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
 
   // Parse elements
-  const tagRegex = /<([a-z][a-z0-9]*)\b[^>]*>([^<]*)<\/\1>|<([a-z][a-z0-9]*)\b[^>]*>([^<]*)/gi;
+  const tagRegex =
+    /<([a-z][a-z0-9]*)\b[^>]*>([^<]*)<\/\1>|<([a-z][a-z0-9]*)\b[^>]*>([^<]*)/gi;
   let match;
 
   while ((match = tagRegex.exec(cleanHtml)) !== null) {
@@ -136,14 +182,20 @@ async function generatePdfFromHtml(htmlContent) {
 
           switch (tag.toLowerCase()) {
             case "h1":
-              doc.fontSize(18).font("Helvetica-Bold").text(text, { align: "center" });
+              doc
+                .fontSize(18)
+                .font("Helvetica-Bold")
+                .text(text, { align: "center" });
               doc.moveDown(0.3);
               doc.font("Helvetica");
               break;
 
             case "h2":
               doc.fontSize(14).font("Helvetica-Bold").text(text);
-              doc.moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.width - doc.page.margins.right, doc.y).stroke();
+              doc
+                .moveTo(doc.page.margins.left, doc.y)
+                .lineTo(doc.page.width - doc.page.margins.right, doc.y)
+                .stroke();
               doc.moveDown(0.3);
               doc.font("Helvetica");
               break;
@@ -200,19 +252,14 @@ export async function generateInterviewReport({
   selfDescription,
 }) {
   try {
-    console.log("Starting interview report generation with OpenAI...");
+    console.log("Starting interview report generation with Groq...");
 
-    const response = await openai.responses.parse({
-      model: "gpt-4o-2024-08-06",
-      input: [
-        {
-          role: "system",
-          content:
-            "You are an expert interview coach. Create a tailored interview report based on the provided information.",
-        },
-        {
-          role: "user",
-          content: `
+    const report = await generateStructuredOutput({
+      schemaName: "interview_report",
+      schema: interviewReportSchema,
+      systemPrompt:
+        "You are an expert interview coach. Create a tailored interview report based on the provided information.",
+      userPrompt: `
 Create a tailored interview report from:
 - Job Description: ${jobDescription}
 - Candidate Resume: ${candidateResume}
@@ -227,15 +274,10 @@ Rules:
 6) Use concrete, role-specific content
 7) Include a short "title" for this report (optional)
 `,
-        },
-      ],
-      text: {
-        format: zodTextFormat(interviewReportSchema, "interview_report"),
-      },
     });
 
     console.log("Interview report generated successfully");
-    return response.output_parsed;
+    return report;
   } catch (err) {
     console.error("Interview report generation error:", err.message);
     throw err;
@@ -250,17 +292,12 @@ export async function generateResumePDF({
   try {
     console.log("Starting resume PDF generation...");
 
-    const response = await openai.responses.parse({
-      model: "gpt-4o-2024-08-06",
-      input: [
-        {
-          role: "system",
-          content:
-            "You are a senior resume writer and ATS optimization expert. Generate a polished, modern, ATS-friendly one-page resume in valid HTML.",
-        },
-        {
-          role: "user",
-          content: `
+    const response = await generateStructuredOutput({
+      schemaName: "resume_html",
+      schema: resumeHtmlSchema,
+      systemPrompt:
+        "You are a senior resume writer and ATS optimization expert. Generate a polished, modern, ATS-friendly one-page resume in valid HTML.",
+      userPrompt: `
 Generate a polished, modern, ATS-friendly one-page resume in valid HTML.
 
 Requirements:
@@ -282,15 +319,10 @@ ${selfDescription}
 Target Job Description:
 ${jobDescription}
 `,
-        },
-      ],
-      text: {
-        format: zodTextFormat(resumeHtmlSchema, "resume_html"),
-      },
     });
 
-    console.log("Received resume HTML from OpenAI");
-    const htmlContent = response.output_parsed.html;
+    console.log("Received resume HTML from Groq");
+    const htmlContent = response.html;
 
     console.log("Converting HTML to PDF...");
     const pdfBuffer = await generatePdfFromHtml(htmlContent);
