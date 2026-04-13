@@ -233,6 +233,42 @@ Do not include markdown fences, explanations, comments, or any text outside the 
   return schema.parse(parsed);
 }
 
+function cleanupHtmlResponse(html) {
+  if (!html) return "";
+
+  let cleaned = html.trim();
+
+  cleaned = cleaned.replace(/^```html\s*/i, "");
+  cleaned = cleaned.replace(/^```\s*/i, "");
+  cleaned = cleaned.replace(/\s*```$/i, "");
+
+  return cleaned.trim();
+}
+
+async function generateRawHtml({ systemPrompt, userPrompt }) {
+  const response = await groq.chat.completions.create({
+    model: GROQ_MODEL,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+  });
+
+  const html = response.choices?.[0]?.message?.content;
+
+  if (!html) {
+    throw new Error("Groq returned an empty HTML response");
+  }
+
+  const cleanedHtml = cleanupHtmlResponse(html);
+
+  if (!cleanedHtml) {
+    throw new Error("Groq returned empty HTML after cleanup");
+  }
+
+  return cleanedHtml;
+}
+
 function parseHtmlToPdfElements(html) {
   const elements = [];
 
@@ -421,16 +457,13 @@ export async function generateResumePDF({
   try {
     console.log("Starting resume PDF generation...");
 
-    const response = await generateStructuredOutput({
-      schemaName: "resume_html",
-      schema: resumeHtmlSchema,
-      responseSchema: resumeHtmlResponseSchema,
+    const htmlContent = await generateRawHtml({
       systemPrompt:
-        "You are a senior resume writer and ATS optimization expert. Return only a JSON object matching the schema exactly. The html field must contain a complete valid semantic HTML resume as a string.",
+        "You are a senior resume writer and ATS optimization expert. Return only valid semantic HTML for a polished, modern, ATS-friendly one-page resume. Do not return JSON. Do not include markdown fences. Do not include explanations.",
       userPrompt: `
 Generate a polished, modern, ATS-friendly one-page resume in valid HTML.
 
-Requirements for the html string:
+Requirements:
 - Must be valid semantic HTML
 - Use h1 for name, h2 for sections, h3 for subsections
 - Use <p> tags for paragraphs
@@ -439,7 +472,7 @@ Requirements for the html string:
 - No CSS required
 - Keep concise and impactful bullet points
 - Must fit on one page
-- Return JSON only with a single "html" field
+- Return raw HTML only
 
 Candidate Resume Source:
 ${resume}
@@ -453,7 +486,6 @@ ${jobDescription}
     });
 
     console.log("Received resume HTML from Groq");
-    const htmlContent = response.html;
 
     console.log("Converting HTML to PDF...");
     const pdfBuffer = await generatePdfFromHtml(htmlContent);
