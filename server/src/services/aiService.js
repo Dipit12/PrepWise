@@ -1,6 +1,5 @@
 import Groq from "groq-sdk";
 import { z } from "zod";
-import { zodToJsonSchema } from "zod-to-json-schema";
 import dotenv from "dotenv";
 import PDFDocument from "pdfkit";
 
@@ -63,13 +62,112 @@ const resumeHtmlSchema = z.object({
   html: z.string().min(1),
 });
 
-function buildGroqResponseFormat(name, schema) {
+const interviewReportResponseSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    matchScore: {
+      type: "number",
+    },
+    technicalQuestions: {
+      type: "array",
+      minItems: 5,
+      maxItems: 5,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          question: { type: "string" },
+          intention: { type: "string" },
+          answer: { type: "string" },
+        },
+        required: ["question", "intention", "answer"],
+      },
+    },
+    behavioralQuestions: {
+      type: "array",
+      minItems: 5,
+      maxItems: 5,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          question: { type: "string" },
+          intention: { type: "string" },
+          answer: { type: "string" },
+        },
+        required: ["question", "intention", "answer"],
+      },
+    },
+    skillGaps: {
+      type: "array",
+      minItems: 3,
+      maxItems: 6,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          skill: { type: "string" },
+          severity: {
+            type: "string",
+            enum: ["low", "medium", "high"],
+          },
+        },
+        required: ["skill", "severity"],
+      },
+    },
+    preparationPlan: {
+      type: "array",
+      minItems: 7,
+      maxItems: 7,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          day: { type: "integer" },
+          focus: { type: "string" },
+          tasks: {
+            type: "array",
+            minItems: 2,
+            maxItems: 4,
+            items: { type: "string" },
+          },
+        },
+        required: ["day", "focus", "tasks"],
+      },
+    },
+    title: {
+      type: "string",
+    },
+  },
+  required: [
+    "matchScore",
+    "technicalQuestions",
+    "behavioralQuestions",
+    "skillGaps",
+    "preparationPlan",
+    "title",
+  ],
+};
+
+const resumeHtmlResponseSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    html: {
+      type: "string",
+    },
+  },
+  required: ["html"],
+};
+
+function buildGroqResponseFormat(name, jsonSchema) {
   return {
     type: "json_schema",
     json_schema: {
       name,
-      strict: false,
-      schema: zodToJsonSchema(schema, name),
+      strict: true,
+      schema: jsonSchema,
     },
   };
 }
@@ -77,17 +175,42 @@ function buildGroqResponseFormat(name, schema) {
 async function generateStructuredOutput({
   schemaName,
   schema,
+  responseSchema,
   systemPrompt,
   userPrompt,
 }) {
-  const response = await groq.chat.completions.create({
-    model: GROQ_MODEL,
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    response_format: buildGroqResponseFormat(schemaName, schema),
-  });
+  let response;
+
+  try {
+    response = await groq.chat.completions.create({
+      model: GROQ_MODEL,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      response_format: buildGroqResponseFormat(schemaName, responseSchema),
+    });
+  } catch (err) {
+    const code = err?.error?.code || err?.code;
+    if (code === "json_validate_failed") {
+      response = await groq.chat.completions.create({
+        model: GROQ_MODEL,
+        messages: [
+          {
+            role: "system",
+            content: `${systemPrompt}
+
+Return only a JSON object that matches the schema exactly.
+Do not include markdown fences, explanations, comments, or any text outside the JSON object.`,
+          },
+          { role: "user", content: userPrompt },
+        ],
+        response_format: buildGroqResponseFormat(schemaName, responseSchema),
+      });
+    } else {
+      throw err;
+    }
+  }
 
   const content = response.choices?.[0]?.message?.content;
 
@@ -101,6 +224,10 @@ async function generateStructuredOutput({
     parsed = JSON.parse(content);
   } catch {
     throw new Error("Groq returned invalid JSON");
+  }
+
+  if (parsed.title === "") {
+    parsed.title = undefined;
   }
 
   return schema.parse(parsed);
@@ -257,8 +384,9 @@ export async function generateInterviewReport({
     const report = await generateStructuredOutput({
       schemaName: "interview_report",
       schema: interviewReportSchema,
+      responseSchema: interviewReportResponseSchema,
       systemPrompt:
-        "You are an expert interview coach. Create a tailored interview report based on the provided information.",
+        "You are an expert interview coach. Create a tailored interview report based on the provided information. Return only a JSON object matching the provided schema exactly.",
       userPrompt: `
 Create a tailored interview report from:
 - Job Description: ${jobDescription}
@@ -266,13 +394,14 @@ Create a tailored interview report from:
 - Candidate Self Description: ${selfDescription}
 
 Rules:
-1) matchScore: number from 0 to 100
-2) technicalQuestions: exactly 5 items
-3) behavioralQuestions: exactly 5 items
-4) skillGaps: 3 to 6 items with severity in ["low","medium","high"]
-5) preparationPlan: exactly 7 items with day 1..7 and 2-4 tasks each
+1) matchScore must be a number from 0 to 100
+2) technicalQuestions must contain exactly 5 items
+3) behavioralQuestions must contain exactly 5 items
+4) skillGaps must contain 3 to 6 items with severity in ["low","medium","high"]
+5) preparationPlan must contain exactly 7 items with day values 1 through 7 and 2-4 tasks each
 6) Use concrete, role-specific content
-7) Include a short "title" for this report (optional)
+7) title must always be present as a short report title
+8) Return valid JSON only
 `,
     });
 
@@ -295,20 +424,22 @@ export async function generateResumePDF({
     const response = await generateStructuredOutput({
       schemaName: "resume_html",
       schema: resumeHtmlSchema,
+      responseSchema: resumeHtmlResponseSchema,
       systemPrompt:
-        "You are a senior resume writer and ATS optimization expert. Generate a polished, modern, ATS-friendly one-page resume in valid HTML.",
+        "You are a senior resume writer and ATS optimization expert. Return only a JSON object matching the schema exactly. The html field must contain a complete valid semantic HTML resume as a string.",
       userPrompt: `
 Generate a polished, modern, ATS-friendly one-page resume in valid HTML.
 
-Requirements:
-- Valid semantic HTML with proper structure
+Requirements for the html string:
+- Must be valid semantic HTML
 - Use h1 for name, h2 for sections, h3 for subsections
 - Use <p> tags for paragraphs
 - Use <ul><li> for bullet points
 - Use <strong> for important text
-- Professional content, no CSS styling needed
+- No CSS required
 - Keep concise and impactful bullet points
-- Must be one page only
+- Must fit on one page
+- Return JSON only with a single "html" field
 
 Candidate Resume Source:
 ${resume}
