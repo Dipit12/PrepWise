@@ -14,55 +14,45 @@ const groq = new Groq({ apiKey });
 
 const GROQ_MODEL = "openai/gpt-oss-20b";
 
-const interviewReportSchema = z.object({
+const questionSchema = z.object({
+  question: z.string().min(1),
+  intention: z.string().min(1),
+  answer: z.string().min(1),
+});
+
+const skillGapSchema = z.object({
+  skill: z.string().min(1),
+  severity: z.enum(["low", "medium", "high"]),
+});
+
+const preparationDaySchema = z.object({
+  day: z.number().int().min(1).max(7),
+  focus: z.string().min(1),
+  tasks: z.array(z.string().min(1)).min(2).max(4),
+});
+
+const interviewCoreSchema = z.object({
   matchScore: z.number().min(0).max(100),
-  technicalQuestions: z
-    .array(
-      z.object({
-        question: z.string().min(1),
-        intention: z.string().min(1),
-        answer: z.string().min(1),
-      }),
-    )
-    .min(5)
-    .max(5),
-  behavioralQuestions: z
-    .array(
-      z.object({
-        question: z.string().min(1),
-        intention: z.string().min(1),
-        answer: z.string().min(1),
-      }),
-    )
-    .min(5)
-    .max(5),
-  skillGaps: z
-    .array(
-      z.object({
-        skill: z.string().min(1),
-        severity: z.enum(["low", "medium", "high"]),
-      }),
-    )
-    .min(3)
-    .max(6),
-  preparationPlan: z
-    .array(
-      z.object({
-        day: z.number().int().min(1).max(7),
-        focus: z.string().min(1),
-        tasks: z.array(z.string().min(1)).min(2).max(4),
-      }),
-    )
-    .min(7)
-    .max(7),
+  technicalQuestions: z.array(questionSchema).min(5).max(5),
+  behavioralQuestions: z.array(questionSchema).min(5).max(5),
+  title: z.string().min(1),
+});
+
+const skillGapsSchema = z.object({
+  skillGaps: z.array(skillGapSchema).min(3).max(6),
+});
+
+const preparationPlanSchema = z.object({
+  preparationPlan: z.array(preparationDaySchema).min(7).max(7),
+});
+
+const interviewReportSchema = interviewCoreSchema.extend({
+  skillGaps: z.array(skillGapSchema).min(3).max(6),
+  preparationPlan: z.array(preparationDaySchema).min(7).max(7),
   title: z.string().min(1).optional(),
 });
 
-const resumeHtmlSchema = z.object({
-  html: z.string().min(1),
-});
-
-const interviewReportResponseSchema = {
+const interviewCoreResponseSchema = {
   type: "object",
   additionalProperties: false,
   properties: {
@@ -99,6 +89,22 @@ const interviewReportResponseSchema = {
         required: ["question", "intention", "answer"],
       },
     },
+    title: {
+      type: "string",
+    },
+  },
+  required: [
+    "matchScore",
+    "technicalQuestions",
+    "behavioralQuestions",
+    "title",
+  ],
+};
+
+const skillGapsResponseSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
     skillGaps: {
       type: "array",
       minItems: 3,
@@ -116,6 +122,14 @@ const interviewReportResponseSchema = {
         required: ["skill", "severity"],
       },
     },
+  },
+  required: ["skillGaps"],
+};
+
+const preparationPlanResponseSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
     preparationPlan: {
       type: "array",
       minItems: 7,
@@ -136,29 +150,8 @@ const interviewReportResponseSchema = {
         required: ["day", "focus", "tasks"],
       },
     },
-    title: {
-      type: "string",
-    },
   },
-  required: [
-    "matchScore",
-    "technicalQuestions",
-    "behavioralQuestions",
-    "skillGaps",
-    "preparationPlan",
-    "title",
-  ],
-};
-
-const resumeHtmlResponseSchema = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    html: {
-      type: "string",
-    },
-  },
-  required: ["html"],
+  required: ["preparationPlan"],
 };
 
 function buildGroqResponseFormat(name, jsonSchema) {
@@ -184,6 +177,7 @@ async function generateStructuredOutput({
   try {
     response = await groq.chat.completions.create({
       model: GROQ_MODEL,
+      temperature: 0,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
@@ -195,6 +189,7 @@ async function generateStructuredOutput({
     if (code === "json_validate_failed") {
       response = await groq.chat.completions.create({
         model: GROQ_MODEL,
+        temperature: 0,
         messages: [
           {
             role: "system",
@@ -231,6 +226,15 @@ Do not include markdown fences, explanations, comments, or any text outside the 
   }
 
   return schema.parse(parsed);
+}
+
+function normalizePreparationPlan(preparationPlan) {
+  const sortedPlan = [...preparationPlan].sort((a, b) => a.day - b.day);
+
+  return sortedPlan.map((item, index) => ({
+    ...item,
+    day: index + 1,
+  }));
 }
 
 function cleanupHtmlResponse(html) {
@@ -417,28 +421,85 @@ export async function generateInterviewReport({
   try {
     console.log("Starting interview report generation with Groq...");
 
-    const report = await generateStructuredOutput({
-      schemaName: "interview_report",
-      schema: interviewReportSchema,
-      responseSchema: interviewReportResponseSchema,
+    const sharedContext = `
+Job Description:
+${jobDescription}
+
+Candidate Resume:
+${candidateResume}
+
+Candidate Self Description:
+${selfDescription}
+`;
+
+    const core = await generateStructuredOutput({
+      schemaName: "interview_report_core",
+      schema: interviewCoreSchema,
+      responseSchema: interviewCoreResponseSchema,
       systemPrompt:
-        "You are an expert interview coach. Create a tailored interview report based on the provided information. Return only a JSON object matching the provided schema exactly.",
+        "You are an expert interview coach. Create the core of a tailored interview report. Return only a JSON object matching the provided schema exactly.",
       userPrompt: `
-Create a tailored interview report from:
-- Job Description: ${jobDescription}
-- Candidate Resume: ${candidateResume}
-- Candidate Self Description: ${selfDescription}
+Using the context below, create the interview report core.
+
+${sharedContext}
 
 Rules:
 1) matchScore must be a number from 0 to 100
 2) technicalQuestions must contain exactly 5 items
 3) behavioralQuestions must contain exactly 5 items
-4) skillGaps must contain 3 to 6 items with severity in ["low","medium","high"]
-5) preparationPlan must contain exactly 7 items with day values 1 through 7 and 2-4 tasks each
-6) Use concrete, role-specific content
-7) title must always be present as a short report title
-8) Return valid JSON only
+4) Use concrete, role-specific content
+5) title must always be present as a short report title
+6) Return valid JSON only
 `,
+    });
+
+    const skillGapsResult = await generateStructuredOutput({
+      schemaName: "interview_report_skill_gaps",
+      schema: skillGapsSchema,
+      responseSchema: skillGapsResponseSchema,
+      systemPrompt:
+        "You are an expert interview coach. Identify the candidate's most relevant interview skill gaps. Return only a JSON object matching the provided schema exactly.",
+      userPrompt: `
+Using the context below, generate interview skill gaps.
+
+${sharedContext}
+
+Rules:
+1) skillGaps must contain 3 to 6 items
+2) Each item must include a skill and severity in ["low","medium","high"]
+3) Focus on realistic gaps that matter for the target role
+4) Return valid JSON only
+`,
+    });
+
+    const preparationPlanResult = await generateStructuredOutput({
+      schemaName: "interview_report_preparation_plan",
+      schema: preparationPlanSchema,
+      responseSchema: preparationPlanResponseSchema,
+      systemPrompt:
+        "You are an expert interview coach. Create a concise 7-day interview preparation plan. Return only a JSON object matching the provided schema exactly.",
+      userPrompt: `
+Using the context below, generate a preparation plan.
+
+${sharedContext}
+
+Rules:
+1) preparationPlan must contain exactly 7 items
+2) day values must cover 1 through 7
+3) Each day must include a focus string
+4) Each day must include 2 to 4 concrete tasks
+5) The plan should directly address the role and the candidate's likely weaknesses
+6) Return valid JSON only
+`,
+    });
+
+    const report = interviewReportSchema.parse({
+      ...core,
+      skillGaps: skillGapsResult.skillGaps,
+      preparationPlan: normalizePreparationPlan(
+        preparationPlanResult.preparationPlan,
+      ),
+      title: core.title || undefined,
     });
 
     console.log("Interview report generated successfully");
